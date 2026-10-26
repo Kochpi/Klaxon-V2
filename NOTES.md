@@ -64,7 +64,9 @@ message d'erreur de connexion générique.
 ## 4. À venir
 
 - [ ] Collection MongoDB `avis` (index unique `trajetId + auteurId`)
-- [ ] API Express : auth, villes (autocomplétion), trajets, réservations, avis
+- [x] API : socle Express + connexions MySQL / MongoDB + route de santé (`feat/api-base`)
+- [x] API : authentification (`feat/api-auth`)
+- [ ] API : villes (autocomplétion), trajets, réservations, avis
 - [ ] Maquettes Figma (web + mobile) **avant** le front
 - [ ] Front React
 - [ ] Jeu d'essai de la fonctionnalité phare (avis + note moyenne)
@@ -73,5 +75,41 @@ message d'erreur de connexion générique.
 
 ## 5. Décisions ouvertes
 
-- Session cookie vs JWT (à trancher avec arguments sécurité)
 - Hébergement : local pour l'instant, à revoir en fin de projet
+
+## 6. Authentification (`feat/api-auth`)
+
+### Choix : JWT dans un cookie `httpOnly` + `SameSite=Strict`
+Trois façons de garder un utilisateur connecté ont été comparées :
+
+| Option | Avantage | Inconvénient retenu |
+|---|---|---|
+| Session côté serveur (comme le PHP) | Simple, révocable | Il faut stocker les sessions (table ou mémoire) |
+| JWT dans `localStorage` | Facile côté React | **Lisible par n'importe quel script (XSS) : un vol de jeton donne accès au compte** |
+| **JWT dans un cookie `httpOnly`** | Illisible par JavaScript ; envoyé automatiquement ; pas de stockage serveur | Demande une protection CSRF (assurée par `SameSite=Strict`) |
+
+Retenu : la dernière. Le serveur signe un jeton (HS256, 2 h), le navigateur le renvoie tout seul.
+
+### Mesures de sécurité et leur justification
+| Menace | Mesure |
+|---|---|
+| Vol du jeton par XSS | Cookie `httpOnly` : le JavaScript ne peut pas le lire |
+| CSRF (requête forgée depuis un autre site) | `SameSite=Strict` + CORS limité à `CLIENT_URL` + l'API n'accepte que du JSON |
+| Mots de passe en clair en cas de fuite de la base | bcrypt (10 tours de calcul), jamais de mot de passe dans une réponse ; colonnes explicites (pas de `SELECT *`) |
+| Force brute sur la connexion | `express-rate-limit` : 5 échecs / 15 min / IP (les succès ne comptent pas) |
+| Énumération des comptes | Même message « Email ou mot de passe incorrect » dans les deux cas |
+| Élévation de privilèges à l'inscription (mass assignment) | Seuls nom, prénom, téléphone, email et mot de passe sont lus ; le rôle est toujours `user` |
+| Jeton falsifié | Vérification de la signature par `jwt.verify` (refuse aussi `alg: none`) |
+| Compte supprimé mais jeton encore valide | Le middleware relit l'utilisateur en base à chaque requête protégée |
+| Injection (objet JSON à la place d'une chaîne) | Validation de type : tout ce qui n'est pas une chaîne est rejeté |
+| Injection SQL | Requêtes préparées (`?`) |
+| Fuite d'informations | Gestionnaire d'erreur central : aucune trace d'erreur envoyée au client |
+
+### Points d'attention
+- **Compatibilité des hash PHP** : le seed contient des hash `$2y$` (PHP). La bibliothèque Node attend `$2b$` (même algorithme) : le préfixe est converti à la volée avant la comparaison.
+- **Simplicité volontaire** : le code est écrit avec des notions simples (routes → contrôleur → modèle). Limite connue : le temps de réponse d'un email inconnu est plus court que celui d'un email connu (pas de calcul bcrypt), ce qui pourrait en théorie révéler quels comptes existent. À signaler dans la veille sécurité comme piste d'amélioration.
+- **Inscription** : répondre « email déjà utilisé » permet de savoir qu'un email a un compte. Compromis assumé pour une application interne ; la limitation de débit réduit l'abus.
+- **Pas de rafraîchissement du jeton** : la session dure 2 h puis il faut se reconnecter. Piste d'évolution.
+
+### Tests réalisés (jeu d'essai pour le dossier)
+27 vérifications automatiques, toutes réussies (fichier de test non versionné) : inscription invalide / valide, rôle imposé, doublon avec casse différente, `/me` avec et sans cookie, jetons `alg: none` / mauvais secret / expiré / utilisateur supprimé, connexion avec un hash PHP du seed, même message pour email inconnu, objet à la place d'une chaîne, JSON mal formé, blocage au 6e échec (429), déconnexion, en-têtes `helmet`.
