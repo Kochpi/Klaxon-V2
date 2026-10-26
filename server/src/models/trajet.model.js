@@ -71,4 +71,9 @@ async function remove(id, userId) {
   return result.affectedRows > 0;
 }
 
-module.exports = { findAll, findById, findByUser, create, remove };
+// Change le nombre de places disponibles : -1 quand on réserve, +1 quand on annule
+async function changerPlaces(id, difference) {
+  await pool.execute('UPDATE trajets SET places_dispo = places_dispo + ? WHERE id = ?', [difference, id]);
+}
+
+module.exports = { findAll, findById, findByUser, create, remove, changerPlaces };
