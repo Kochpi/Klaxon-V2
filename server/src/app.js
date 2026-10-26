@@ -7,6 +7,7 @@ const healthRoutes = require('./routes/health.routes');
 const authRoutes = require('./routes/auth.routes');
 const villesRoutes = require('./routes/villes.routes');
 const trajetsRoutes = require('./routes/trajets.routes');
+const reservationsRoutes = require('./routes/reservations.routes');
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/villes', villesRoutes);
 app.use('/api/trajets', trajetsRoutes);
+app.use('/api/reservations', reservationsRoutes);
 
 // Route qui n'existe pas
 app.use((req, res) => {
