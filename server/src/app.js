@@ -5,6 +5,8 @@ const cookieParser = require('cookie-parser');
 
 const healthRoutes = require('./routes/health.routes');
 const authRoutes = require('./routes/auth.routes');
+const villesRoutes = require('./routes/villes.routes');
+const trajetsRoutes = require('./routes/trajets.routes');
 
 const app = express();
 
@@ -15,6 +17,8 @@ app.use(cookieParser()); // permet de lire les cookies
 
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/villes', villesRoutes);
+app.use('/api/trajets', trajetsRoutes);
 
 // Route qui n'existe pas
 app.use((req, res) => {
