@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { formatDate, formatHeure } from '../utils/format.js'
 
 // Une ligne de la liste des trajets
@@ -25,6 +26,10 @@ export default function TrajetCard({ trajet }) {
       <span className={complet ? 'badge badge-complet' : 'badge badge-places'}>
         {complet ? 'Complet' : `${trajet.places_dispo} place${trajet.places_dispo > 1 ? 's' : ''}`}
       </span>
+
+      <Link to={`/trajets/${trajet.id}`} className="btn btn-outline">
+        Voir le trajet
+      </Link>
     </article>
   )
 }

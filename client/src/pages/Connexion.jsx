@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.js'
 
 export default function Connexion() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,7 +17,7 @@ export default function Connexion() {
 
     try {
       await login(email, password)
-      navigate('/')
+      navigate(location.state?.from || '/') // retour sur la page qu'on voulait voir
     } catch (err) {
       setErreur(err.message) // ex : "Email ou mot de passe incorrect"
     }

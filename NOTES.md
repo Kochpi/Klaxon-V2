@@ -236,3 +236,29 @@ client/src/
 
 ### Tests réalisés
 16 vérifications dans un vrai navigateur (Chromium) avec l'API et la base MariaDB : liste de 12 trajets, trajet complet, autocomplétion, recherche filtrée, mauvais mot de passe, connexion, session conservée après rechargement, cookie `httpOnly` illisible en JavaScript, déconnexion, inscription, email déjà utilisé, page inconnue, affichage mobile sans défilement horizontal, aucune erreur JavaScript. (MongoDB simulé pendant ces tests.)
+
+---
+
+## 11. Client React — trajets, réservations, avis (`feat/client-trajets`)
+
+### Pages ajoutées
+| Adresse | Page | Accès |
+|---|---|---|
+| `/trajets/:id` | Détail : contacts du conducteur, note moyenne, avis, bouton Réserver, formulaire d'avis | connecté |
+| `/proposer` | Formulaire de création d'un trajet (autocomplétion des villes) | connecté |
+| `/mon-espace` | Mes réservations (annuler) et mes trajets (supprimer) | connecté |
+
+### Choix
+- **`RequireAuth`** : un composant qui entoure les pages réservées. Un visiteur est renvoyé vers la connexion, puis revient sur la page qu'il voulait voir.
+- **Le formulaire d'avis n'apparaît que si l'utilisateur a réservé le trajet** (le client le sait grâce à `GET /api/reservations`). Ce n'est que du confort : la vraie règle est vérifiée par l'API (403 sinon).
+- **Le bouton Réserver est caché** pour son propre trajet et désactivé si le trajet est complet. Même remarque : l'API refuse de toute façon.
+- Suppression et annulation : confirmation avec `window.confirm`.
+- Rechargement des données après une action : un compteur (`version`) qu'on augmente pour relancer le `useEffect`.
+
+### Sécurité côté client
+- Les protections sont **doublées** : le client masque ce qui n'est pas permis, le serveur le refuse réellement.
+- Test XSS : un commentaire contenant `<b>gras</b>` est affiché tel quel, en texte (React n'interprète pas le HTML) ; aucun élément `<b>` n'est créé.
+- Le message d'erreur du serveur est affiché tel quel (ex. « Vous avez déjà donné votre avis sur ce trajet »).
+
+### Tests réalisés
+19 vérifications dans un vrai navigateur (Chromium) : page protégée et retour après connexion, création d'un trajet invalide puis valide, détail avec contacts, réservation (places −1), formulaire d'avis, note moyenne, commentaire HTML non interprété, deuxième avis refusé, annulation, suppression, trajet inexistant, affichage mobile (détail et Mon espace), aucune erreur JavaScript. (MongoDB simulé pendant ces tests.)
