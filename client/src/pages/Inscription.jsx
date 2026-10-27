@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.js'
 
 export default function Inscription() {
   const { register } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [form, setForm] = useState({ prenom: '', nom: '', telephone: '', email: '', password: '' })
   const [erreur, setErreur] = useState('')
@@ -20,7 +21,7 @@ export default function Inscription() {
 
     try {
       await register(form)
-      navigate('/')
+      navigate(location.state?.from || '/') // retour sur la page qu'on voulait voir
     } catch (err) {
       setErreur(err.message) // ex : "Cet email est déjà utilisé"
     }

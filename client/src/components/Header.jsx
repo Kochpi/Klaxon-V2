@@ -22,6 +22,8 @@ export default function Header() {
 
       <nav className="nav">
         <Link to="/">Trajets</Link>
+        <Link to="/proposer">Proposer un trajet</Link>
+        {user && <Link to="/mon-espace">Mon espace</Link>}
       </nav>
 
       {user ? (
