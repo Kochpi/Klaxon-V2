@@ -113,3 +113,126 @@ Retenu : la dernière. Le serveur signe un jeton (HS256, 2 h), le navigateur le 
 
 ### Tests réalisés (jeu d'essai pour le dossier)
 27 vérifications automatiques, toutes réussies (fichier de test non versionné) : inscription invalide / valide, rôle imposé, doublon avec casse différente, `/me` avec et sans cookie, jetons `alg: none` / mauvais secret / expiré / utilisateur supprimé, connexion avec un hash PHP du seed, même message pour email inconnu, objet à la place d'une chaîne, JSON mal formé, blocage au 6e échec (429), déconnexion, en-têtes `helmet`.
+
+---
+
+## 7. Villes et trajets (`feat/api-trajets`)
+
+### Routes
+| Route | Accès | Rôle |
+|---|---|---|
+| `GET /api/villes?q=bor` | public | Autocomplétion : villes dont le nom commence par `q` |
+| `GET /api/trajets?depart=&arrivee=&date=` | public | Trajets à venir, filtres facultatifs, triés par date |
+| `GET /api/trajets/mes-trajets` | connecté | Les trajets que je propose |
+| `GET /api/trajets/:id` | connecté | Détail, avec email et téléphone du conducteur |
+| `POST /api/trajets` | connecté | Proposer un trajet |
+| `DELETE /api/trajets/:id` | connecté | Supprimer **mon** trajet |
+
+### Choix de sécurité
+| Risque (relevé dans le projet PHP) | Mesure |
+|---|---|
+| `places_dispo` envoyé par le client | Jamais lu dans la requête : il est égal à `places_total` à la création |
+| Se faire passer pour un autre conducteur | `user_id` jamais lu dans la requête : c'est l'utilisateur connecté |
+| Supprimer le trajet de quelqu'un d'autre (IDOR) | `DELETE ... WHERE id = ? AND user_id = ?` ; si rien n'est supprimé : 404 (même réponse que « n'existe pas ») |
+| Suppression « silencieuse » du PHP | Le serveur vérifie `affectedRows` et répond 404 si rien n'a été supprimé |
+| Coordonnées des conducteurs visibles de tous | Email et téléphone seulement dans le détail, réservé aux utilisateurs connectés |
+| Données incohérentes | Validation serveur (villes différentes, dates, 1 à 9 places) **et** contraintes `CHECK` en base |
+| Injection SQL | Requêtes préparées (`?`) ; test avec `' OR 1=1 --` dans l'autocomplétion : aucun résultat |
+| Mauvais types (texte à la place d'un nombre) | Les villes et les places doivent être de vrais nombres entiers |
+
+### Tests réalisés (jeu d'essai pour le dossier)
+37 vérifications automatiques sur une vraie base MariaDB avec le schéma et le seed du projet : autocomplétion, injection SQL, filtres, tri, contacts masqués en public, création valide et 9 cas refusés, valeurs imposées par le serveur, suppression par un autre utilisateur (refusée), par le propriétaire (acceptée).
+
+---
+
+## 8. Réservations (`feat/api-reservations`)
+
+### Routes (toutes réservées aux utilisateurs connectés)
+| Route | Rôle |
+|---|---|
+| `GET /api/reservations` | Mes réservations |
+| `POST /api/reservations` `{ "trajet_id": 3 }` | Réserver 1 place |
+| `DELETE /api/reservations/:trajetId` | Annuler MA réservation |
+
+### Règles métier vérifiées par le serveur
+Trajet existant, pas son propre trajet, pas déjà parti, pas complet, pas déjà réservé. À la réservation `places_dispo` baisse de 1, à l'annulation elle remonte de 1.
+
+### Simplification assumée (à citer dans le dossier)
+- **1 réservation = 1 place** (la colonne `nb_places` existe mais vaut toujours 1).
+- **Pas de transaction** : si deux personnes réservent la dernière place exactement au même instant, une des deux peut recevoir une erreur serveur. La contrainte `CHECK (places_dispo >= 0)` de la base empêche malgré tout d'avoir un nombre de places négatif. Amélioration possible : transaction SQL + `UPDATE ... WHERE places_dispo >= 1`.
+- Annuler une réservation ne fait pas de contrôle de date (on peut annuler un trajet passé).
+
+### Sécurité
+Comme pour les trajets, `user_id` vient toujours de la connexion, jamais de la requête : impossible de réserver ou d'annuler à la place de quelqu'un d'autre.
+
+### Tests réalisés
+20 vérifications automatiques sur une vraie base MariaDB : accès sans connexion, id invalide, trajet inexistant / à soi / complet / déjà parti, réservation, baisse puis remontée des places, double réservation refusée, annulation de la réservation d'un autre refusée, cohérence de `places_dispo` avec les réservations sur tous les trajets.
+
+---
+
+## 9. Avis et note moyenne — MongoDB (`feat/api-avis`)
+
+### Pourquoi MongoDB pour les avis ?
+Un avis est un petit document autonome (note, commentaire, auteur, date) sans lien complexe avec les autres tables, et il est surtout lu et agrégé (moyenne). Le référentiel demande aussi un accès à une base NoSQL : les avis sont le cas d'usage naturel.
+
+### Document dans la collection `avis`
+```
+{ trajetId: 3, conducteurId: 2, auteurId: 5, auteurPrenom: "Sophie", note: 4, commentaire: "...", createdAt: Date }
+```
+`conducteurId` et `auteurPrenom` sont copiés au moment de la création (les deux bases ne peuvent pas être jointes) : cela évite de redemander MySQL à chaque affichage.
+
+### Routes
+| Route | Accès | Rôle |
+|---|---|---|
+| `POST /api/avis` `{ trajet_id, note, commentaire }` | connecté | Donner un avis |
+| `GET /api/avis/conducteur/:id` | public | Note moyenne, nombre d'avis, liste des 50 derniers |
+
+### Règles métier
+- Note entière de 1 à 5, commentaire facultatif de 500 caractères maximum.
+- **Seuls les passagers ayant réservé le trajet** peuvent donner un avis (vérifié dans MySQL) : 403 sinon.
+- **Un seul avis par passager et par trajet** : garanti par un **index unique MongoDB** `(trajetId, auteurId)`. Une tentative de doublon donne l'erreur 11000, transformée en 409.
+- La moyenne est calculée par MongoDB (`aggregate` avec `$group` et `$avg`), arrondie à 1 décimale côté serveur.
+
+### Sécurité
+- `conducteurId` vient du trajet en base et `auteurId` de la connexion : jamais de la requête (impossible d'écrire un avis au nom d'un autre ou d'attribuer l'avis à un autre conducteur).
+- Types vérifiés : une note ou un commentaire envoyé sous forme d'objet (`{"$gt": 0}`) est refusé, ce qui évite l'injection NoSQL.
+- Les identifiants internes (`auteurId`, `conducteurId`, `_id`) ne sont pas renvoyés dans la liste publique.
+
+### Simplification assumée
+Il n'y a pas de règle « le trajet doit être terminé » pour donner un avis, ni de modification / suppression d'un avis.
+
+### Tests réalisés
+20 vérifications automatiques : accès sans connexion, sans réservation, 8 entrées invalides refusées (note 0, 6, texte, décimale, objet, etc.), avis valide, valeurs imposées par le serveur, doublon refusé, moyenne et liste publiques, conducteur sans avis, identifiant invalide. **Attention : la couche MongoDB a été simulée en mémoire pendant ces tests ; le test réel (Postman + Compass) est à faire et à documenter avec captures.**
+
+---
+
+## 10. Client React — base, connexion et accueil (`feat/client-base`)
+
+### Choix techniques
+| Sujet | Choix | Pourquoi |
+|---|---|---|
+| Outil de build | Vite + React | Démarrage rapide, standard du marché |
+| Pages / navigation | `react-router-dom` | Une adresse (URL) = une page, sans rechargement |
+| Appels à l'API | `fetch` regroupé dans `src/api.js` | Un seul endroit qui gère le JSON et les erreurs |
+| Utilisateur connecté | Contexte React (`AuthContext`) | Toutes les pages connaissent l'utilisateur sans se le passer |
+| Style | Un seul fichier CSS avec des variables (couleurs des maquettes) | Pas de bibliothèque à apprendre |
+| Liaison avec l'API | **Proxy Vite** : `/api` est redirigé vers `localhost:3000` | Le navigateur ne voit qu'un seul site : le cookie `SameSite=Strict` fonctionne et il n'y a pas de problème CORS en développement |
+
+### Structure
+```
+client/src/
+  api.js                 appels à l'API
+  auth/                  contexte de connexion (AuthContext, AuthProvider)
+  components/            Header, TrajetCard, VilleInput (autocomplétion)
+  pages/                 Accueil, Connexion, Inscription, NotFound
+  utils/format.js        affichage des dates
+```
+
+### Sécurité côté client
+- Le jeton n'est **jamais** manipulé par le JavaScript : il reste dans le cookie `httpOnly` (vérifié par le test : `document.cookie` ne le contient pas). Le client demande `/api/auth/me` pour savoir qui est connecté.
+- React échappe automatiquement tout texte affiché : une donnée saisie ne s'exécute pas comme du code (protection XSS). Aucun `dangerouslySetInnerHTML` n'est utilisé.
+- Les messages d'erreur affichés viennent de l'API (génériques pour la connexion).
+- Les champs ont aussi une validation HTML (`type="email"`, `required`, `minLength`), mais c'est seulement du confort : la vraie validation reste côté serveur.
+
+### Tests réalisés
+16 vérifications dans un vrai navigateur (Chromium) avec l'API et la base MariaDB : liste de 12 trajets, trajet complet, autocomplétion, recherche filtrée, mauvais mot de passe, connexion, session conservée après rechargement, cookie `httpOnly` illisible en JavaScript, déconnexion, inscription, email déjà utilisé, page inconnue, affichage mobile sans défilement horizontal, aucune erreur JavaScript. (MongoDB simulé pendant ces tests.)
